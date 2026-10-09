@@ -1,0 +1,21 @@
+{
+  "name": "Babel",
+  "shell": "app/shell.html",
+  "css": [
+    "app/style.css"
+  ],
+  "js": [
+    "app/js/core.js",
+    "app/js/settings.js",
+    "app/js/random.js",
+    "app/js/home.js",
+    "app/js/room.js",
+    "app/js/library.js",
+    "app/js/pictures.js",
+    "app/js/sound.js",
+    "app/js/synth.js",
+    "app/js/music.js",
+    "app/js/search.js",
+    "app/js/main.js"
+  ]
+}

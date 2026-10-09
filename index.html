@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Library of Babel</title>
+  <style>
+    html,body{margin:0;min-height:100%;background:#0b0b10;color:#9ecbff;font-family:Arial,sans-serif}
+    body{display:grid;place-items:center;min-height:100vh}
+    main{max-width:560px;padding:28px;border:1px solid #3b6ea8;border-radius:14px;background:#10131c}
+    h1{margin:0 0 10px;font-size:24px}p{line-height:1.45;color:#cfe3ff}.err{color:#ffb4a8;white-space:pre-wrap}
+    button{background:#9ecbff;color:#08121f;border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer}
+  </style>
+</head>
+<body>
+  <main id="loader">
+    <h1>Loading the Library of Babel</h1>
+    <p id="status">Fetching the app...</p>
+  </main>
+  <script>
+    /* This file never needs to change. Everything else (styles, every room, the music, bitmaps,
+       sound, search) is a separate file in the GitHub repo under app/. Push a change there and
+       every copy of this loader picks it up. */
+    (async function () {
+      var USER = 'b4936955-hue', REPO = 'LibraryBabel';
+      /* Each source is a folder that holds app/ and data/. One source supplies the whole app,
+         so the pieces always match. GitHub raw updates in minutes; jsDelivr can lag, so it goes last. */
+      var sources = [
+        'https://raw.githubusercontent.com/' + USER + '/' + REPO + '/HEAD/',
+        'https://raw.githubusercontent.com/' + USER + '/' + REPO + '/master/',
+        'https://raw.githubusercontent.com/' + USER + '/' + REPO + '/main/',
+        'https://cdn.jsdelivr.net/gh/' + USER + '/' + REPO + '@latest/',
+        'https://fastly.jsdelivr.net/gh/' + USER + '/' + REPO + '@latest/',
+        'https://quantil.jsdelivr.net/gh/' + USER + '/' + REPO + '@latest/'
+      ];
+      var loader = document.getElementById('loader'), statusEl = document.getElementById('status');
+      var stamp = Date.now(), tried = [];
+      async function get(url) {
+        var res = await fetch(url + '?v=' + stamp, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status + ' for ' + url);
+        return res.text();
+      }
+      async function loadApp(base) {
+        var man = JSON.parse(await get(base + 'app/manifest.json'));
+        var names = [man.shell].concat(man.css, man.js), done = 0;
+        var texts = await Promise.all(names.map(function (n) {
+          return get(base + n).then(function (t) {
+            done++; statusEl.textContent = 'Loading ' + done + ' of ' + names.length + ' pieces...';
+            if (!t.length) throw new Error('Empty file: ' + n);
+            return t;
+          });
+        }));
+        var shell = texts[0], css = texts.slice(1, 1 + man.css.length), js = texts.slice(1 + man.css.length);
+        if (shell.indexOf('<!--SCRIPTS-->') < 0 || shell.indexOf('<!--STYLE-->') < 0) throw new Error('app/shell.html is missing its placeholders');
+        var safe = function (t) { return t.replace(/<\/(script|style)/gi, '<\\/$1'); };
+        var styleTag = css.map(function (c) { return '<style>' + c.replace(/<\/style/gi, '<\\/style') + '</style>'; }).join('\n');
+        var scriptTags = js.map(function (c, i) { return '<script>' + safe(c) + '\n//# sourceURL=' + man.js[i] + '<\/script>'; }).join('\n');
+        /* Tell the app where its data/ folder is, so it uses the source that worked. */
+        var inject = '<script>window.BABEL_DATA_BASE=' + JSON.stringify(base + 'data/') + ';<\/script>';
+        return shell.replace('<!--STYLE-->', function () { return inject + '\n' + styleTag; })
+                    .replace('<!--SCRIPTS-->', function () { return scriptTags; });
+      }
+      try {
+        var html = null;
+        for (var i = 0; i < sources.length && !html; i++) {
+          statusEl.textContent = 'Fetching the app (' + (i + 1) + '/' + sources.length + ')...';
+          try { html = await loadApp(sources[i]); }
+          catch (e) { tried.push(sources[i] + ' -> ' + (e && e.message ? e.message : e)); }
+        }
+        if (!html) throw new Error('Could not reach the app from any source.\n' + tried.join('\n'));
+        document.open();
+        document.write(html);
+        document.close();
+      } catch (err) {
+        loader.innerHTML = '<h1>Loader failed</h1><p class="err"></p><button onclick="location.reload()">Retry</button>';
+        loader.querySelector('.err').textContent = String(err && err.message ? err.message : err);
+      }
+    })();
+  </script>
+</body>
+</html>
