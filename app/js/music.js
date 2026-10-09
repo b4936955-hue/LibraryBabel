@@ -85,8 +85,10 @@ function musicUI(host,toks,st){
  let rot=0;const turn=a=>{rot=a;disc.style.transform="rotate("+a+"rad)"};
  turn(R.setPos(-1));
  const nowp=mk("div","nowp","Ready when you are."),tm=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
+ const songTime=p=>{if(!mine||!orig.stepTimes)return p*STEP/SPEED;const i=Math.max(0,Math.min(n,Math.floor(p))),f=i<n?p-i:0;
+  return(orig.stepTimes[i]+(i<n?(orig.stepTimes[i+1]-orig.stepTimes[i])*f:0))*STEP/SPEED};
  const setPos=p=>{turn(R.setPos(p));const i=Math.min(n-1,Math.floor(p)),t=toks[i],ml=t%38,bs=Math.floor(t/38)%13,dr=Math.floor(t/494);
-  nowp.textContent=tm(p*STEP/SPEED)+" / "+tm(n*STEP/SPEED)+"   "+(ml>=2?nm(ml):ml===1?"held":"rest")+(BAND?(bs?"  bass "+NOTE[(bs-1)%12]:"")+(dr?"  "+["","kick","snare","hat"][dr]:""):"")};
+  nowp.textContent=tm(songTime(p))+" / "+tm(songTime(n))+"   "+(ml>=2?nm(ml):ml===1?"held":"rest")+(BAND?(bs?"  bass "+NOTE[(bs-1)%12]:"")+(dr?"  "+["","kick","snare","hat"][dr]:""):"")};
  /* the needle swings down and back */
  let anim=0;const swing=(a,b,ms,done)=>{const id=++anim,t0=performance.now();const f=now=>{if(id!==anim)return;const q=Math.min(1,(now-t0)/ms),s=q*q*(3-2*q);R.drawArm(a+(b-a)*s,false);if(q<1)requestAnimationFrame(f);else done&&done()};requestAnimationFrame(f)};
  const pb=mk("button","btn pri","Play"),row=mk("div","row");
@@ -119,7 +121,7 @@ function musicUI(host,toks,st){
  f.onchange=()=>f.files[0]&&loadAudio(f.files[0]);
  go.onclick=async()=>{if(!buf){info.textContent="Add an mp3 first.";return}
   const secs=Math.min(+ln.value,Math.floor(buf.duration)||1),s=Math.min(Math.max(0,+s0.value||0),Math.max(0,buf.duration-secs));s0.value=s;go.disabled=true;
-  try{const t=await transcribe(buf,s,secs,p=>info.textContent="Listening... "+Math.round(p*100)+"%");const spd=Math.max(.25,Math.min(2,STEP/t.stepSec));SPEED=spd;autoSpeed=true;orig={buf,s:t.t0,secs:t.secs,sub:t.sub,bpm:t.bpm,speed:spd,toks:t};keep=true;nav(link("music",toSeed(t,1976,false),{a:0,b:t.length}))}catch(e){info.textContent="Something went wrong while listening: "+e.message;go.disabled=false}};
+  try{const t=await transcribe(buf,s,secs,p=>info.textContent="Listening... "+Math.round(p*100)+"%");const spd=Math.max(.25,Math.min(2,STEP/t.stepSec));SPEED=spd;autoSpeed=true;orig={buf,s:t.t0,secs:t.secs,sub:t.sub,bpm:t.bpm,speed:spd,stepTimes:t.stepTimes,toks:t};keep=true;nav(link("music",toSeed(t,1976,false),{a:0,b:t.length}))}catch(e){info.textContent="Something went wrong while listening: "+e.message;go.disabled=false}};
  const r2=mk("div","row");r2.append(f,mk("span",null,"start at"),s0,mk("span",null,"sec, for"),ln,go);
  const r3=mk("div","row"),selOf=(k,opts)=>{const s=mk("select");opts.forEach(([x,t])=>s.append(new Option(t,x,x===SG(k),x===SG(k))));s.onchange=()=>{SET[k]=s.value;saveSet()};return s};
  const ck=(t,k)=>{const l=mk("label"),c=mk("input");c.type="checkbox";c.checked=!!SG(k);c.onchange=()=>{SET[k]=c.checked;saveSet()};l.append(c," "+t);return l};
@@ -226,6 +228,12 @@ function fitLine(ts){let a=ts[0],T=(ts[ts.length-1]-ts[0])/Math.max(1,ts.length-
   const den=m*sxx-sx*sx;if(!den)break;T=(m*sxy-sx*sy)/den;a=(sy-T*sx)/m;
   const res=ts.map((t,k)=>Math.abs(t-(a+T*k)));const lim=Math.max(.08*T,pctl(res,.75)*1.5);keep=ts.map((_,k)=>k).filter(k=>res[k]<=lim)}
  const res=ts.map((t,k)=>Math.abs(t-(a+T*k)));return{a,T,dev:pctl(res,.9)/T}}
+function smoothBeatTimes(ts){
+ const out=ts.map((t,i)=>{const lo=Math.max(0,i-2),hi=Math.min(ts.length,i+3),part=ts.slice(lo,hi);
+  if(part.length<2)return t;const f=fitLine(part);return f.a+(i-lo)*f.T});
+ for(let i=1;i<out.length;i++)out[i]=Math.max(out[i],out[i-1]+.05);
+ return out
+}
 
 async function transcribe(buf,start,secs,cb){
  const sr=buf.sampleRate,chs=Math.max(1,buf.numberOfChannels||1),total=buf.length||buf.getChannelData(0).length,dur=total/sr;
@@ -240,24 +248,29 @@ async function transcribe(buf,start,secs,cb){
  /* beat */
  const oe=onsetEnv(xd,srd),fps=oe.fps;cb&&cb(.12);await new Promise(z=>setTimeout(z));
  const flatEnv=!oe.env.some(v=>v>0),Pf=flatEnv?fps*.6:pickTempo(oe.env,fps),beats=flatEnv?[]:trackBeats(oe.env,fps,Pf);
- let T=60/(60*fps/Pf),b0=0;
- if(beats.length>=4){const fl=fitLine(beats.map(i=>i/fps));T=fl.T;b0=fl.a}else{b0=beats.length?beats[0]/fps:0}
+ let T=60/(60*fps/Pf),b0=0,beatTimes=[];
+ if(beats.length>=4){beatTimes=smoothBeatTimes(beats.map(i=>i/fps));const fl=fitLine(beatTimes);T=fl.T;b0=fl.a}else{b0=beats.length?beats[0]/fps:0}
  /* which beat is the bar line: the one whose neighbours hit hardest in the low end */
  const bidx=k=>Math.max(0,Math.min(oe.low.length-1,Math.round((b0+k*T)*fps)));
  const nbt=Math.floor((oe.env.length/fps-b0)/T),sc4=[0,0,0,0],cn4=[0,0,0,0];
  for(let k=0;k<=nbt;k++){let m=0;for(let d=-1;d<=1;d++)m=Math.max(m,oe.low[Math.max(0,Math.min(oe.low.length-1,bidx(k)+d))]);sc4[((k%4)+4)%4]+=m;cn4[((k%4)+4)%4]++}
  let dph=0;{let bv=-1;for(let q=0;q<4;q++){const v=sc4[q]/Math.max(1,cn4[q]);if(v>bv){bv=v;dph=q}}}
- const secRel=start-r0;let k0=0,bd=1e9;for(let k=-8;k<=Math.ceil((oe.env.length/fps-b0)/T);k++){if(((k%4)+4)%4!==dph)continue;const d=Math.abs(b0+k*T-secRel);if(d<bd){bd=d;k0=k}}
- let sub=Math.round(secs/(T/4))<=960?4:2;const stepSec=T/sub,n=Math.max(8,Math.min(960,Math.round(secs/stepSec)));
- const g0=b0+k0*T;/* grid start, seconds from r0 */
- const tS=i=>g0+i*stepSec;
+ const beatAt=k=>{if(!beatTimes.length)return b0+k*T;const i=Math.floor(k),f=k-i;
+  if(i<0)return beatTimes[0]+k*T;
+  if(i>=beatTimes.length-1)return beatTimes[beatTimes.length-1]+(k-(beatTimes.length-1))*T;
+  return beatTimes[i]*(1-f)+beatTimes[i+1]*f};
+ const secRel=start-r0;let k0=0,bd=1e9;for(let k=-8;k<=Math.ceil((oe.env.length/fps-b0)/T);k++){if(((k%4)+4)%4!==dph)continue;const d=Math.abs(beatAt(k)-secRel);if(d<bd){bd=d;k0=k}}
+ let sub=Math.round(secs/(T/4))<=960?4:2;const roughStepSec=T/sub,n=Math.max(8,Math.min(960,Math.round(secs/roughStepSec)));
+ const g0=beatAt(k0);/* grid start, seconds from r0 */
+ const tS=i=>beatAt(k0+i/sub),stepDur=i=>tS(i+1)-tS(i);
+ const stepSec=(tS(n)-g0)/n;
  /* the frame stream: one spectrum per step, taken over that step */
  const NM=stepSec>=.13?4096:2048,NB=8192,hm=NM/2,SM=new Float32Array(hm),SB=new Float32Array(NB/2),sx=t=>Math.round(t*srd);
  const WF=[],bassS=[];
  for(let i=-2;i<n;i++){
   if(i%4===3){cb&&cb(.15+.35*i/n);await new Promise(z=>setTimeout(z))}
-  const Wc=new Float32Array(hm);spec(xd,sx(tS(i)+.5*stepSec),NM,SM);whiten(SM,Wc);WF.push(Wc);
-  if(i>=0){spec(xd,sx(tS(i)+.5*stepSec),NB,SB);const Wb=new Float32Array(NB/2);whiten(SB,Wb);bassS.push(Wb)}}
+  const Wc=new Float32Array(hm);spec(xd,sx(tS(i)+.5*stepDur(i)),NM,SM);whiten(SM,Wc);WF.push(Wc);
+  if(i>=0){spec(xd,sx(tS(i)+.5*stepDur(i)),NB,SB);const Wb=new Float32Array(NB/2);whiten(SB,Wb);bassS.push(Wb)}}
  /* how far off concert pitch the recording is: peaks of the whole clip vote on how far they sit from the nearest semitone */
  let tu=0;{let cs=0,sn=0;for(let q=2;q<WF.length;q++){const W=WF[q];for(let b=Math.round(150*NM/srd);b<Math.round(1500*NM/srd);b++)if(W[b]>0){const fr=b*srd/NM,mm=69+12*Math.log2(fr/440),dv=mm-Math.round(mm);cs+=W[b]*Math.cos(2*Math.PI*dv);sn+=W[b]*Math.sin(2*Math.PI*dv)}}
   if(cs*cs+sn*sn>0)tu=Math.max(-45,Math.min(45,Math.atan2(sn,cs)/(2*Math.PI)*100))}
@@ -307,11 +320,12 @@ async function transcribe(buf,start,secs,cb){
  const sx2=t=>Math.round(t*sr),xr=xf;
  const fb=(a,b)=>[Math.round(a*ND/sr),Math.min(hd,Math.round(b*ND/sr))];
  const B0=fb(40,200),B1=fb(1500,5000),B2=fb(6000,Math.min(16000,sr/2-100));
- const frame=(q)=>{const A=new Float32Array(hd);spec(xr,sx2(tS(Math.floor(q/4))+((q%4+4)%4-1.5)*.25*stepSec+.0*stepSec)-sx2(r0*0),ND,A);return A};
+ const frame=(q)=>{const i=Math.floor(q/4),A=new Float32Array(hd);spec(xr,sx2(tS(i)+((q%4+4)%4-1.5)*.25*stepDur(i)),ND,A);return A};
  const Fq=new Map();const get=q=>{if(!Fq.has(q))Fq.set(q,frame(q));return Fq.get(q)};
  for(let i=0;i<n;i++){let f=[0,0,0];for(let j=0;j<4;j++){const q=4*i+j,c=get(q),p=get(q-1);const bd=[B0,B1,B2];for(let k=0;k<3;k++){let t=0;for(let b=bd[k][0];b<bd[k][1];b++)t+=Math.max(0,c[b]*c[b]-p[b]*p[b]);f[k]=Math.max(f[k],t)}}fl.push(f);Fq.delete(4*i-4);Fq.delete(4*i-3);Fq.delete(4*i-2);Fq.delete(4*i-5)}
  const th=b=>{const v=fl.map(f=>f[b]),m=v.reduce((p,q)=>p+q,0)/n;return m+Math.sqrt(v.reduce((p,q)=>p+(q-m)*(q-m),0)/n)};
  const Tt=[th(0),th(1),th(2)];
  cb&&cb(.97);
  const out=tok.map((mel,i)=>{const f=fl[i],d=!doDrums?0:f[1]>Tt[1]&&f[2]>Tt[2]?2:f[0]>Tt[0]?1:f[2]>Tt[2]?3:0;return mel+38*(bs_[i]+13*d)});
- out.stepSec=stepSec;out.sub=sub;out.bpm=60/T;out.t0=r0+g0;out.secs=n*stepSec; return out}
+ out.stepTimes=Float64Array.from({length:n+1},(_,i)=>(tS(i)-g0)/stepSec);
+ out.stepSec=stepSec;out.sub=sub;out.bpm=60/(stepSec*sub);out.t0=r0+g0;out.secs=tS(n)-g0; return out}

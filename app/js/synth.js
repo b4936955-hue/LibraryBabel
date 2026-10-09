@@ -42,27 +42,31 @@ function playToks(toks,onPos,end,spd){
  AC();stopAudio();onStop=end;os=[];
  if(!noise){noise=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate);const d=noise.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
   verb=ctx.createBuffer(2,ctx.sampleRate*1.6|0,ctx.sampleRate);for(let c=0;c<2;c++){const q=verb.getChannelData(c);for(let i=0;i<q.length;i++)q[i]=(Math.random()*2-1)*Math.pow(1-i/q.length,3)}}
- const n=toks.length,SP=STEP/(spd||SPEED),t0=ctx.currentTime+.08,out=ctx.createGain(),comp=ctx.createDynamicsCompressor(),cv=ctx.createConvolver(),wet=ctx.createGain();
+ const n=toks.length,SP=STEP/(spd||SPEED),timing=!tuneSel&&isOrig(toks)&&orig.stepTimes&&orig.stepTimes.length===n+1?orig.stepTimes:null;
+ const unitAt=i=>timing?timing[Math.max(0,Math.min(n,i))]:Math.max(0,Math.min(n,i)),timeAt=i=>t0+unitAt(i)*SP;
+ const t0=ctx.currentTime+.08,out=ctx.createGain(),comp=ctx.createDynamicsCompressor(),cv=ctx.createConvolver(),wet=ctx.createGain();
  const V=k=>(+SG(k)||0)/100,hum=+SG("humanize")||0,swing=(+SG("swing")||0)/100,tr=+SG("transpose")||0,bassI=SG("bassInst")||"organ";
  out.gain.value=.3*SG("volume")/60;cv.buffer=verb;wet.gain.value=V("reverb")*.6;out.connect(comp);out.connect(cv);cv.connect(wet);wet.connect(comp);comp.connect(ctx.destination);
  const BS=(!tuneSel&&isOrig(toks)&&orig.sub)||4,mel=toks.map(t=>t%38),bas=toks.map(t=>Math.floor(t/38)%13),drm=toks.map(t=>Math.floor(t/494));let last=-1;
- const at=i=>t0+i*SP+(i%2?swing*SP*.5:0)+jit(hum/1000),vel=()=>1-(hum?Math.random()*hum/40*.35:0);
+ const at=i=>timeAt(i)+(i%2?swing*(unitAt(i+1)-unitAt(i))*SP*.5:0)+jit(hum/1000),vel=()=>1-(hum?Math.random()*hum/40*.35:0);
  const step=i=>{const st=Math.max(t0,at(i));
-  if(mel[i]>=2){let l=1;while(mel[i+l]===1)l++;last=mel[i]-2+48;voice(last+tr,st,Math.max(st+.05,t0+(i+l)*SP),INST,out,.9*V("melodyVol")*vel())}
+  if(mel[i]>=2){let l=1;while(mel[i+l]===1)l++;last=mel[i]-2+48;voice(last+tr,st,Math.max(st+.05,timeAt(i+l)),INST,out,.9*V("melodyVol")*vel())}
   if(BAND){
-   if(bas[i]&&(i===0||bas[i-1]!==bas[i]||i%BS===0)){let l=1;while(i+l<n&&bas[i+l]===bas[i]&&(i+l)%BS)l++;voice(35+bas[i]+tr,st,st+l*SP,bassI,out,.6*V("bassVol")*vel())}
+   if(bas[i]&&(i===0||bas[i-1]!==bas[i]||i%BS===0)){let l=1;while(i+l<n&&bas[i+l]===bas[i]&&(i+l)%BS)l++;voice(35+bas[i]+tr,st,Math.max(st+.05,timeAt(i+l)),bassI,out,.6*V("bassVol")*vel())}
    const dv=V("drumVol")*vel();if(drm[i]===1)drum("k",st,out,dv);else if(drm[i]===2)drum("s",st,out,dv);else if(drm[i]===3)drum("h",st,out,dv)}
   if(CHORDS&&i%(4*BS)===0&&last>=0){const BL=4*BS,cnt=new Array(13).fill(0);for(let j=i;j<i+BL&&j<n;j++)cnt[bas[j]]++;let bb=0;for(let q=1;q<=12;q++)if(cnt[q]>cnt[bb]||(bb===0&&cnt[q]>0))bb=q;
-   const r=bb?48+(bb-1):48+last%12;let mi=0,ma=0;for(let j=i;j<i+BL&&j<n;j++)if(mel[j]>=2){const pc=(mel[j]-2+48)%12;if(pc===(r+3)%12)mi=1;if(pc===(r+4)%12)ma=1}[0,mi&&!ma?3:4,7].forEach(x=>voice(r+x+tr,st,st+BL*SP,"strings",out,.16*V("chordVol")))}};
+   const r=bb?48+(bb-1):48+last%12;let mi=0,ma=0;for(let j=i;j<i+BL&&j<n;j++)if(mel[j]>=2){const pc=(mel[j]-2+48)%12;if(pc===(r+3)%12)mi=1;if(pc===(r+4)%12)ma=1}[0,mi&&!ma?3:4,7].forEach(x=>voice(r+x+tr,st,Math.max(st+.05,timeAt(i+BL)),"strings",out,.16*V("chordVol"))) }};
  /* only the next few seconds are built at a time, so a long or busy record never floods the audio engine */
  let nx=0;const pump=()=>{pumpT=0;if(!ctx||nodes!==os)return;const now=ctx.currentTime;for(let k=os.length-1;k>=0;k--)if(os[k]._e<now)os.splice(k,1);
-  while(nx<n&&t0+nx*SP<now+4)step(nx++);if(nx<n)pumpT=setTimeout(pump,250)};
+  while(nx<n&&timeAt(nx)<now+4)step(nx++);if(nx<n)pumpT=setTimeout(pump,250)};
  const dens=CRACKLE[SG("crackle")]||0;
  if(dens){const nb=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate),cd=nb.getChannelData(0);for(let i=0;i<cd.length;i++)cd[i]=Math.random()<dens?Math.random()*2-1:0;
-  const ns=ctx.createBufferSource(),ng=ctx.createGain();ng.gain.value=.5;ns.buffer=nb;ns.loop=true;ns.connect(ng);ng.connect(out);ns.start(t0);ns.stop(t0+n*SP+.1);os.push(ns)}
+  const ns=ctx.createBufferSource(),ng=ctx.createGain();ng.gain.value=.5;ns.buffer=nb;ns.loop=true;ns.connect(ng);ng.connect(out);ns.start(t0);ns.stop(timeAt(n)+.1);os.push(ns)}
  nodes=os;pump();
- const tick=()=>{const p=(ctx.currentTime-t0)/SP;
-  if(p>=n){if(SG("loop")){const f=onPos,e=onStop;onStop=null;nodes.forEach(o=>{try{o.stop()}catch(x){}});nodes=null;cancelAnimationFrame(raf);f(0);playToks(toks,f,e,spd);return}stopAudio();return}
+ const tick=()=>{const elapsed=(ctx.currentTime-t0)/SP;
+  if(elapsed>=unitAt(n)){if(SG("loop")){const f=onPos,e=onStop;onStop=null;nodes.forEach(o=>{try{o.stop()}catch(x){}});nodes=null;cancelAnimationFrame(raf);f(0);playToks(toks,f,e,spd);return}stopAudio();return}
+  let lo=0,hi=n;while(lo<hi){const mid=Math.ceil((lo+hi)/2);if(unitAt(mid)<=elapsed)lo=mid;else hi=mid-1}
+  const p=lo<n?lo+(elapsed-unitAt(lo))/(unitAt(lo+1)-unitAt(lo)):n;
   onPos(Math.max(0,p));raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)}
 let ctx=null,nodes=null,raf=0,onStop=null,pumpT=0;
 const AC=()=>{ctx=ctx||new(window.AudioContext||window.webkitAudioContext)();ctx.resume();return ctx};
