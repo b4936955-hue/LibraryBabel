@@ -45,14 +45,15 @@ function playToks(toks,onPos,end,spd){
  const n=toks.length,SP=STEP/(spd||SPEED),t0=ctx.currentTime+.08,out=ctx.createGain(),comp=ctx.createDynamicsCompressor(),cv=ctx.createConvolver(),wet=ctx.createGain();
  const V=k=>(+SG(k)||0)/100,hum=+SG("humanize")||0,swing=(+SG("swing")||0)/100,tr=+SG("transpose")||0,bassI=SG("bassInst")||"organ";
  out.gain.value=.3*SG("volume")/60;cv.buffer=verb;wet.gain.value=V("reverb")*.6;out.connect(comp);out.connect(cv);cv.connect(wet);wet.connect(comp);comp.connect(ctx.destination);
- const mel=toks.map(t=>t%38),bas=toks.map(t=>Math.floor(t/38)%13),drm=toks.map(t=>Math.floor(t/494));let last=-1;
+ const BS=(orig&&!tuneSel&&orig.sub)||4,mel=toks.map(t=>t%38),bas=toks.map(t=>Math.floor(t/38)%13),drm=toks.map(t=>Math.floor(t/494));let last=-1;
  const at=i=>t0+i*SP+(i%2?swing*SP*.5:0)+jit(hum/1000),vel=()=>1-(hum?Math.random()*hum/40*.35:0);
  for(let i=0;i<n;i++){const st=Math.max(t0,at(i));
   if(mel[i]>=2){let l=1;while(mel[i+l]===1)l++;last=mel[i]-2+48;voice(last+tr,st,Math.max(st+.05,t0+(i+l)*SP),INST,out,.9*V("melodyVol")*vel())}
   if(BAND){
-   if(bas[i]&&(i===0||bas[i-1]!==bas[i]||i%4===0)){let l=1;while(i+l<n&&bas[i+l]===bas[i]&&(i+l)%4)l++;voice(35+bas[i]+tr,st,st+l*SP,bassI,out,.6*V("bassVol")*vel())}
+   if(bas[i]&&(i===0||bas[i-1]!==bas[i]||i%BS===0)){let l=1;while(i+l<n&&bas[i+l]===bas[i]&&(i+l)%BS)l++;voice(35+bas[i]+tr,st,st+l*SP,bassI,out,.6*V("bassVol")*vel())}
    const dv=V("drumVol")*vel();if(drm[i]===1)drum("k",st,out,dv);else if(drm[i]===2)drum("s",st,out,dv);else if(drm[i]===3)drum("h",st,out,dv)}
-  if(CHORDS&&i%16===0&&last>=0){const r=48+last%12;let mi=0,ma=0;for(let j=i;j<i+16;j++)if(mel[j]>=2){const pc=(mel[j]-2+48)%12;if(pc===(r+3)%12)mi=1;if(pc===(r+4)%12)ma=1}[0,mi&&!ma?3:4,7].forEach(x=>voice(r+x+tr,st,st+16*SP,"strings",out,.16*V("chordVol")))}}
+  if(CHORDS&&i%(4*BS)===0&&last>=0){const BL=4*BS,cnt=new Array(13).fill(0);for(let j=i;j<i+BL&&j<n;j++)cnt[bas[j]]++;let bb=0;for(let q=1;q<=12;q++)if(cnt[q]>cnt[bb]||(bb===0&&cnt[q]>0))bb=q;
+   const r=bb?48+(bb-1):48+last%12;let mi=0,ma=0;for(let j=i;j<i+BL&&j<n;j++)if(mel[j]>=2){const pc=(mel[j]-2+48)%12;if(pc===(r+3)%12)mi=1;if(pc===(r+4)%12)ma=1}[0,mi&&!ma?3:4,7].forEach(x=>voice(r+x+tr,st,st+BL*SP,"strings",out,.16*V("chordVol")))}}
  const dens=CRACKLE[SG("crackle")]||0;
  if(dens){const nb=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate),cd=nb.getChannelData(0);for(let i=0;i<cd.length;i++)cd[i]=Math.random()<dens?Math.random()*2-1:0;
   const ns=ctx.createBufferSource(),ng=ctx.createGain();ng.gain.value=.5;ns.buffer=nb;ns.loop=true;ns.connect(ng);ng.connect(out);ns.start(t0);ns.stop(t0+n*SP+.1);os.push(ns)}
