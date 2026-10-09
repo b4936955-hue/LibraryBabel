@@ -89,7 +89,7 @@ $("#nav").append(...NAV.map(([k,t])=>{const a=mk("a",null,t);a.dataset.k=k;a.tab
 /* ---------- router ---------- */
 function route(){
  viewTok++;stopAudio();stopMonkey();
- if(!keep)orig=null;keep=false;hl=null;{const q=(new URLSearchParams(location.search).get("h")||"").split("-").map(Number);if(q.length===2&&q[1]>q[0])hl={a:q[0],b:q[1]}}
+ keep=false;hl=null;{const q=(new URLSearchParams(location.search).get("h")||"").split("-").map(Number);if(q.length===2&&q[1]>q[0])hl={a:q[0],b:q[1]}}
  const p=new URLSearchParams(location.search);let seed=p.get("seed");const qa=p.get("a");
  if(qa)try{seed=[...qa].reduce((x,c)=>x*36n+BigInt(parseInt(c,36)),0n).toString()}catch(e){seed=null}
  const m=p.get("m")||(seed?"letters":null);

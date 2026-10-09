@@ -1,4 +1,7 @@
 "use strict";
+/* is this the record that was just made from the mp3? (then we know its tempo and can play the original) */
+let autoSpeed=false;
+function isOrig(toks){if(!orig||!orig.toks||orig.toks.length!==toks.length)return false;for(let i=0;i<toks.length;i++)if(orig.toks[i]!==toks[i])return false;return true}
 /* ---------- the record: drawing ---------- */
 const TAU=Math.PI*2;
 const VINYL={black:["#26262c","#09090b"],red:["#b02d2d","#4a1010"],blue:["#2f55b0","#101e4a"],gold:["#c19b3e","#52400f"],green:["#2a9a58","#0f3d22"],white:["#f0ece4","#9a958a"],purple:["#7142b0","#2a1450"],orange:["#df7a30","#5c2a0a"],pink:["#df78a4","#5a1a38"],teal:["#2ca29b","#0c3a38"],smoke:["#53535c","#15151a"]};
@@ -71,6 +74,7 @@ function makeRecord(mkCanvas,toks,cfg){
 
 /* ---------- the record player: the page ---------- */
 function musicUI(host,toks,st){
+ const mine=isOrig(toks);if(mine)SPEED=orig.speed||SPEED;else if(autoSpeed){SPEED=(+SG("tempo")||100)/100;autoSpeed=false}
  const n=toks.length,wrap=mk("div","rec"),L=mk("div"),Rt=mk("div"),deck=mk("div","deck");
  const mkCanvas=SZ=>{const c=mk("canvas");c.width=c.height=SZ;return c};
  const acc=getComputedStyle(document.documentElement).getPropertyValue("--ac").trim()||"#c79a4a";
@@ -88,7 +92,7 @@ function musicUI(host,toks,st){
  const pb=mk("button","btn pri","Play"),row=mk("div","row");
  const doneState=()=>{delete pb.dataset.on;pb.textContent="Play";const r=R.rad(0);R.setPos(-1);turn(R.rest());nowp.textContent="Ready when you are."};
  const start=()=>{pb.dataset.on=1;pb.textContent="Stop";playToks(toks,setPos,()=>{if(pb.dataset.on)doneState()})};
- pb.onclick=()=>{if(pb.dataset.on){stopAudio();return}
+ pb.onclick=()=>{AC();if(pb.dataset.on){stopAudio();return}
   if(SG("needleDrop")&&!SG("motion")){pb.dataset.on=1;pb.textContent="Stop";swing(R.PARK,R.RO,520,()=>{if(pb.dataset.on){onStop=null;delete pb.dataset.on;start()}});onStop=()=>{anim++;doneState()}}else start()};
  const si=mk("select"),sp=mk("input"),spv=mk("span","setv");
  INST_NAMES.forEach(([x,t])=>si.append(new Option(t,x,x===INST,x===INST)));si.onchange=()=>INST=si.value;
@@ -98,7 +102,13 @@ function musicUI(host,toks,st){
  const row2=mk("div","row");row2.append(chk("Bass and drums",()=>BAND,z=>BAND=z),chk("Chords underneath",()=>CHORDS,z=>CHORDS=z),chk("Loop",()=>!!SG("loop"),z=>{SET.loop=z;saveSet()}));
  if(tuneSel){const u=TUNES[tuneSel.i],tt=[];let tok=tuneSel.k;u.ns.slice(0,Math.max(2,Math.min(u.len,tuneSel.c||u.len))).forEach(([mm,d],q)=>{if(q)tok+=u.iv[q-1];tt.push(tok);for(let z=1;z<d;z++)tt.push(1)});
   const pt=mk("button","btn","Hear "+u.n+" with its real rhythm");pt.onclick=()=>{if(pt.dataset.on){stopAudio();return}doneState();stopAudio();pt.dataset.on=1;pt.textContent="Stop";playToks(tt,()=>{},()=>{delete pt.dataset.on;pt.textContent="Hear "+u.n+" with its real rhythm"},1)};row2.append(pt)}
- if(orig){const po=mk("button","btn","Play the original clip");po.onclick=()=>{stopAudio();AC();const s=ctx.createBufferSource(),g=ctx.createGain();g.gain.value=SG("volume")/60;s.buffer=orig.buf;s.connect(g);g.connect(ctx.destination);s.start(0,orig.s,orig.secs);nodes=[s]};row2.append(po)}
+ if(mine){const po=mk("button","btn","Play the original clip"),idle=()=>{po.textContent="Play the original clip"};
+  po.onclick=()=>{AC();if(po.dataset.on){stopAudio();return}stopAudio();
+   const b=orig.buf,off=Math.max(0,Math.min(orig.s,b.duration-.1)),dur=Math.max(.1,Math.min(orig.secs,b.duration-off)),s=ctx.createBufferSource(),g=ctx.createGain();
+   g.gain.value=.35*SG("volume")/60;s.buffer=b;s.connect(g);g.connect(ctx.destination);
+   po.dataset.on=1;po.textContent="Stop the original";nodes=[s];onStop=()=>{delete po.dataset.on;idle()};
+   s.onended=()=>{if(nodes&&nodes[0]===s){nodes=null;const f=onStop;onStop=null;f&&f()}};
+   s.start(0,off,dur)};row2.append(po)}
  Rt.append(row,row2,nowp);if(SG("showNotes"))winText(Rt,toks.map(t=>nm(t%38)).join(" "),"mono");
  /* mp3 to notes */
  const mp=mk("div","panel");mp.append(mk("h3",null,"Got an mp3?"),mk("p",null,"Pick a song and a spot in it, up to two minutes. I'll find the beat, write down the notes that get struck and open them as a record, with the tempo matched to the song. A record only holds a melody, a bass line and a drum beat, so what you get back is a plain cover of the tune and not the recording itself. If you want the actual sound, use the Sound room."));
@@ -109,7 +119,7 @@ function musicUI(host,toks,st){
  f.onchange=()=>f.files[0]&&loadAudio(f.files[0]);
  go.onclick=async()=>{if(!buf){info.textContent="Add an mp3 first.";return}
   const secs=Math.min(+ln.value,Math.floor(buf.duration)||1),s=Math.min(Math.max(0,+s0.value||0),Math.max(0,buf.duration-secs));s0.value=s;go.disabled=true;
-  try{const t=await transcribe(buf,s,secs,p=>info.textContent="Listening... "+Math.round(p*100)+"%");SPEED=Math.max(.25,Math.min(2,STEP/t.stepSec));orig={buf,s:t.t0,secs:t.secs,sub:t.sub,bpm:t.bpm};keep=true;nav(link("music",toSeed(t,1976,false),{a:0,b:t.length}))}catch(e){info.textContent="Something went wrong while listening: "+e.message;go.disabled=false}};
+  try{const t=await transcribe(buf,s,secs,p=>info.textContent="Listening... "+Math.round(p*100)+"%");const spd=Math.max(.25,Math.min(2,STEP/t.stepSec));SPEED=spd;autoSpeed=true;orig={buf,s:t.t0,secs:t.secs,sub:t.sub,bpm:t.bpm,speed:spd,toks:t};keep=true;nav(link("music",toSeed(t,1976,false),{a:0,b:t.length}))}catch(e){info.textContent="Something went wrong while listening: "+e.message;go.disabled=false}};
  const r2=mk("div","row");r2.append(f,mk("span",null,"start at"),s0,mk("span",null,"sec, for"),ln,go);
  const r3=mk("div","row"),selOf=(k,opts)=>{const s=mk("select");opts.forEach(([x,t])=>s.append(new Option(t,x,x===SG(k),x===SG(k))));s.onchange=()=>{SET[k]=s.value;saveSet()};return s};
  const ck=(t,k)=>{const l=mk("label"),c=mk("input");c.type="checkbox";c.checked=!!SG(k);c.onchange=()=>{SET[k]=c.checked;saveSet()};l.append(c," "+t);return l};
@@ -126,8 +136,8 @@ function musicUI(host,toks,st){
  mk2.append(mrow,tr);upd();
  Rt.append(mp,mk2);wrap.append(L,Rt);host.append(wrap);
  if(pending){const p0=pending;pending=null;loadAudio(p0)}
- if(hl&&orig)st.textContent="That's your clip written down as notes, at about "+Math.round(orig.bpm)+" beats a minute. It won't sound like the original, but every note here is one I heard.";
- if(SG("autoplay")&&!orig&&!tuneSel)setTimeout(()=>pb.onclick(),300)}
+ if(hl&&mine)st.textContent="That's your clip written down as notes, at about "+Math.round(orig.bpm)+" beats a minute. It won't sound like the original, but every note here is one I heard.";
+ if(SG("autoplay")&&!mine&&!tuneSel)setTimeout(()=>pb.onclick(),300)}
 
 /* ---------- monkeys ---------- */
 /* each note is [midi, length in 1/8 second steps]: 4 is a quarter note, 2 an eighth, 8 a half */
@@ -267,12 +277,15 @@ async function transcribe(buf,start,secs,cb){
   const Wb=bassS[i];let bb=-1,bv=0;for(let m=33;m<=55;m++){const s=sal(Wb,srd,NB,m,tu);if(s>bv){bv=s;bb=m}}bass.push(bb);bassStr.push(bv)}
  /* melody: a note starts where something new and strong appears */
  const sens={low:.8,normal:.55,high:.4}[SG("transSens")]||.55,ref=Math.max(1e-9,pctl(novBest,.9)),thr=sens*ref;
- const midi=new Array(n).fill(null),start_=new Array(n).fill(false);let cur=null,base=0,curStart=-1;
+ /* first find every place a note might start, then drop echoes: one struck note shows up in two neighbouring steps because the windows overlap */
+ const midi=new Array(n).fill(null),start_=new Array(n).fill(false),pm=new Array(n).fill(null);
+ for(let i=0;i<n;i++)if(novBest[i]>=thr&&cand[i].length){const pk=cand[i],s1=pk[0][1];let hi=pk[0];pk.forEach(p=>{if(p[1]>=.45*s1&&p[0]>hi[0])hi=p});pm[i]=hi[0]}
+ for(let i=1;i<n;i++)if(pm[i]!==null&&pm[i-1]!==null){const same=Math.abs(pm[i]-pm[i-1])<=1;
+  if(same||Math.min(novBest[i],novBest[i-1])<.8*Math.max(novBest[i],novBest[i-1])){if(novBest[i]>novBest[i-1]*(same?1:1)){pm[i-1]=null}else pm[i]=null}}
+ let cur=null,base=0,curStart=-1;const maxHold=4*sub*2;
  for(let i=0;i<n;i++){
-  let on=false,m=null;
-  if(novBest[i]>=thr&&cand[i].length){const pk=cand[i],s1=pk[0][1];let hi=pk[0];pk.forEach(p=>{if(p[1]>=0.45*s1&&p[0]>hi[0])hi=p});m=hi[0];on=true}
-  if(on){cur=m;curStart=i;base=steady[i][m-MLO]||1e-9;midi[i]=m;start_[i]=true}
-  else if(cur!==null){const s=steady[i][cur-MLO];if(s>=0.3*base)midi[i]=cur;else cur=null}}
+  if(pm[i]!==null){cur=pm[i];curStart=i;base=steady[i][cur-MLO]||1e-9;midi[i]=cur;start_[i]=true}
+  else if(cur!==null){const s=steady[i][cur-MLO];if(s>=.3*base&&i-curStart<maxHold)midi[i]=cur;else cur=null}}
  /* put the tune in the notes a record can hold (C3 to B5), moving whole octaves so it keeps its shape */
  const used=midi.filter(m=>m!==null);let shift=0;
  if(used.length&&SG("transOct")!=="off"){let bc=-1,bdd=1e9;const med=used.slice().sort((p,q)=>p-q)[used.length>>1];
