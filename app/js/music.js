@@ -260,7 +260,7 @@ async function transcribe(buf,start,secs,cb){
   if(i>=beatTimes.length-1)return beatTimes[beatTimes.length-1]+(k-(beatTimes.length-1))*T;
   return beatTimes[i]*(1-f)+beatTimes[i+1]*f};
  const secRel=start-r0;let k0=0,bd=1e9;for(let k=-8;k<=Math.ceil((oe.env.length/fps-b0)/T);k++){if(((k%4)+4)%4!==dph)continue;const d=Math.abs(beatAt(k)-secRel);if(d<bd){bd=d;k0=k}}
- let sub=Math.round(secs/(T/4))<=960?4:2;const roughStepSec=T/sub,n=Math.max(8,Math.min(960,Math.round(secs/roughStepSec)));
+ let sub=Math.round(secs/(T/8))<=960?8:Math.round(secs/(T/4))<=960?4:2;const roughStepSec=T/sub,n=Math.max(8,Math.min(960,Math.round(secs/roughStepSec)));
  const g0=beatAt(k0);/* grid start, seconds from r0 */
  const tS=i=>beatAt(k0+i/sub),stepDur=i=>tS(i+1)-tS(i);
  const stepSec=(tS(n)-g0)/n;
@@ -289,12 +289,13 @@ async function transcribe(buf,start,secs,cb){
   cand.push(pk);novBest.push(s1);
   const Wb=bassS[i];let bb=-1,bv=0;for(let m=33;m<=55;m++){const s=sal(Wb,srd,NB,m,tu);if(s>bv){bv=s;bb=m}}bass.push(bb);bassStr.push(bv)}
  /* melody: a note starts where something new and strong appears */
- const sens={low:.8,normal:.55,high:.4}[SG("transSens")]||.55,ref=Math.max(1e-9,pctl(novBest,.9)),thr=sens*ref;
- /* first find every place a note might start, then drop echoes: one struck note shows up in two neighbouring steps because the windows overlap */
+ const sens={low:.8,normal:.55,high:.4}[SG("transSens")]||.55,ref=Math.max(1e-9,pctl(novBest,.9));
+ const localRef=i=>pctl(novBest.slice(Math.max(0,i-2*sub),Math.min(n,i+2*sub+1)),.8);
+ /* first find every place a note might start, then drop only repeated pitches caused by overlapping windows */
  const midi=new Array(n).fill(null),start_=new Array(n).fill(false),pm=new Array(n).fill(null);
- for(let i=0;i<n;i++)if(novBest[i]>=thr&&cand[i].length){const pk=cand[i],s1=pk[0][1];let hi=pk[0];pk.forEach(p=>{if(p[1]>=.45*s1&&p[0]>hi[0])hi=p});pm[i]=hi[0]}
+ for(let i=0;i<n;i++)if(novBest[i]>=Math.max(ref*sens*.3,localRef(i)*sens*.55)&&cand[i].length){const pk=cand[i],s1=pk[0][1];let hi=pk[0];pk.forEach(p=>{if(p[1]>=.45*s1&&p[0]>hi[0])hi=p});pm[i]=hi[0]}
  for(let i=1;i<n;i++)if(pm[i]!==null&&pm[i-1]!==null){const same=Math.abs(pm[i]-pm[i-1])<=1;
-  if(same||Math.min(novBest[i],novBest[i-1])<.8*Math.max(novBest[i],novBest[i-1])){if(novBest[i]>novBest[i-1]*(same?1:1)){pm[i-1]=null}else pm[i]=null}}
+  if(same&&Math.min(novBest[i],novBest[i-1])<.65*Math.max(novBest[i],novBest[i-1])){if(novBest[i]>novBest[i-1])pm[i-1]=null;else pm[i]=null}}
  let cur=null,base=0,curStart=-1;const maxHold=4*sub*2;
  for(let i=0;i<n;i++){
   if(pm[i]!==null){cur=pm[i];curStart=i;base=steady[i][cur-MLO]||1e-9;midi[i]=cur;start_[i]=true}
