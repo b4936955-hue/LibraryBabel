@@ -13,7 +13,7 @@ const lum=h=>{const n=parseInt(h.slice(1),16);return(.299*(n>>16)+.587*(n>>8&255
 function makeRecord(mkCanvas,toks,cfg){
  const n=toks.length,SZ=840,CX=SZ/2,CY=SZ/2,RO=SZ*.455,RI=SZ*.17,RL=SZ*.145,PX=SZ*.93,PY=SZ*.3,LA=300;
  const turns=Math.max(1.5,Math.min(70,n*STEP/1.8)),pitch=(RO-RI)/turns,amp=pitch*.3;
- const wv=new Float32Array(n+2);{let last=0;for(let i=0;i<n;i++){const t=toks[i],ml=t%38;if(ml>=2)last=(ml-2)/35-.5;else if(ml===0)last=0;wv[i]=last*amp+(Math.floor(t/494)?amp*.3:0)}wv[n]=wv[n-1]||0;wv[n+1]=wv[n]}
+ const wv=new Float32Array(n+2);{let last=0;for(let i=0;i<n;i++){const part=musicParts(toks[i],MUSIC_POLY),ml=part.voices[0];if(ml>=2)last=(ml-2)/35-.5;else if(ml===0)last=0;wv[i]=last*amp+(part.drum?amp*.3:0)}wv[n]=wv[n-1]||0;wv[n+1]=wv[n]}
  const wob=u=>{const i=Math.min(n,Math.floor(u)),t=u-i,s=t*t*(3-2*t);return wv[i]*(1-s)+wv[i+1]*s};
  const th=u=>u/n*turns*TAU,rad=u=>RO-(RO-RI)*u/n+wob(u);
  const pos=u=>{const r=rad(u),a=th(u);return[CX+r*Math.sin(a),CY-r*Math.cos(a)]};
@@ -73,7 +73,8 @@ function makeRecord(mkCanvas,toks,cfg){
  return{SZ,base,gro,prog,shn,arm,setPos,drawArm,PARK,RO,rad,rest,naAt,th,tip,turns,sub}}
 
 /* ---------- the record player: the page ---------- */
-function musicUI(host,toks,st){
+function musicUI(host,toks,st,poly=false){
+ MUSIC_POLY=poly;
  const mine=isOrig(toks);if(mine)SPEED=orig.speed||SPEED;else if(autoSpeed){SPEED=(+SG("tempo")||100)/100;autoSpeed=false}
  const n=toks.length,wrap=mk("div","rec"),L=mk("div"),Rt=mk("div"),deck=mk("div","deck");
  const mkCanvas=SZ=>{const c=mk("canvas");c.width=c.height=SZ;return c};
@@ -87,7 +88,7 @@ function musicUI(host,toks,st){
  const nowp=mk("div","nowp","Ready when you are."),tm=s=>Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0");
  const songTime=p=>{if(!mine||!orig.stepTimes)return p*STEP/SPEED;const i=Math.max(0,Math.min(n,Math.floor(p))),f=i<n?p-i:0;
   return(orig.stepTimes[i]+(i<n?(orig.stepTimes[i+1]-orig.stepTimes[i])*f:0))*STEP/SPEED};
- const setPos=p=>{turn(R.setPos(p));const i=Math.min(n-1,Math.floor(p)),t=toks[i],ml=t%38,bs=Math.floor(t/38)%13,dr=Math.floor(t/494);
+ const setPos=p=>{turn(R.setPos(p));const i=Math.min(n-1,Math.floor(p)),part=musicParts(toks[i],poly),ml=part.voices[0],bs=part.bass,dr=part.drum;
   nowp.textContent=tm(songTime(p))+" / "+tm(songTime(n))+"   "+(ml>=2?nm(ml):ml===1?"held":"rest")+(BAND?(bs?"  bass "+NOTE[(bs-1)%12]:"")+(dr?"  "+["","kick","snare","hat"][dr]:""):"")};
  /* the needle swings down and back */
  let anim=0;const swing=(a,b,ms,done)=>{const id=++anim,t0=performance.now();const f=now=>{if(id!==anim)return;const q=Math.min(1,(now-t0)/ms),s=q*q*(3-2*q);R.drawArm(a+(b-a)*s,false);if(q<1)requestAnimationFrame(f);else done&&done()};requestAnimationFrame(f)};
@@ -111,9 +112,11 @@ function musicUI(host,toks,st){
    po.dataset.on=1;po.textContent="Stop the original";nodes=[s];onStop=()=>{delete po.dataset.on;idle()};
    s.onended=()=>{if(nodes&&nodes[0]===s){nodes=null;const f=onStop;onStop=null;f&&f()}};
    s.start(0,off,dur)};row2.append(po)}
- Rt.append(row,row2,nowp);if(SG("showNotes"))winText(Rt,toks.map(t=>nm(t%38)).join(" "),"mono");
+ Rt.append(row,row2,nowp);if(SG("showNotes")){const held=new Array(poly?MUSIC_VOICES:1).fill(null),text=toks.map(t=>{const voices=musicParts(t,poly).voices,notes=[];
+   for(let v=0;v<held.length;v++){if(voices[v]===0)held[v]=null;else if(voices[v]>=2)held[v]=voices[v];if(held[v]!==null)notes.push(nm(held[v]))}
+   return notes.length?notes.join("+"):"."}).join(" ");winText(Rt,text,"mono")}
  /* mp3 to notes */
- const mp=mk("div","panel");mp.append(mk("h3",null,"Got an mp3?"),mk("p",null,"Pick a song and a spot in it, up to two minutes. I'll find the beat, write down the notes that get struck and open them as a record, with the tempo matched to the song. A record only holds a melody, a bass line and a drum beat, so what you get back is a plain cover of the tune and not the recording itself. If you want the actual sound, use the Sound room."));
+ const mp=mk("div","panel");mp.append(mk("h3",null,"Got an mp3?"),mk("p",null,"Pick a song and a spot in it, up to two minutes. I'll find the beat, write down up to five overlapping note parts plus bass and drums, and open them as a shareable record with the tempo matched to the song. It's still a simplified transcription, not the original recording. If you want the actual sound, use the Sound room."));
  const f=mk("input");f.type="file";f.accept="audio/*,.mp3";const s0=mk("input");s0.type="number";s0.min=0;s0.value=0;s0.style.width="80px";
  const ln=mk("select");[4,8,16,32,60,120].forEach(x=>ln.append(new Option(x+" seconds",x,x===16,x===16)));
  const go=mk("button","btn pri","Make a record"),info=mk("div","note");let buf=null;
@@ -121,7 +124,7 @@ function musicUI(host,toks,st){
  f.onchange=()=>f.files[0]&&loadAudio(f.files[0]);
  go.onclick=async()=>{if(!buf){info.textContent="Add an mp3 first.";return}
   const secs=Math.min(+ln.value,Math.floor(buf.duration)||1),s=Math.min(Math.max(0,+s0.value||0),Math.max(0,buf.duration-secs));s0.value=s;go.disabled=true;
-  try{const t=await transcribe(buf,s,secs,p=>info.textContent="Listening... "+Math.round(p*100)+"%");const spd=Math.max(.25,Math.min(2,STEP/t.stepSec));SPEED=spd;autoSpeed=true;orig={buf,s:t.t0,secs:t.secs,sub:t.sub,bpm:t.bpm,speed:spd,stepTimes:t.stepTimes,toks:t};keep=true;nav(link("music",toSeed(t,1976,false),{a:0,b:t.length}))}catch(e){info.textContent="Something went wrong while listening: "+e.message;go.disabled=false}};
+  try{const t=await transcribe(buf,s,secs,p=>info.textContent="Listening... "+Math.round(p*100)+"%");const spd=Math.max(.25,Math.min(2,STEP/t.stepSec));SPEED=spd;autoSpeed=true;orig={buf,s:t.t0,secs:t.secs,sub:t.sub,bpm:t.bpm,speed:spd,stepTimes:t.stepTimes,toks:t};keep=true;nav(link("musicpoly",toSeed(t,ROOMS.musicpoly.K,false),{a:0,b:t.length}))}catch(e){info.textContent="Something went wrong while listening: "+e.message;go.disabled=false}};
  const r2=mk("div","row");r2.append(f,mk("span",null,"start at"),s0,mk("span",null,"sec, for"),ln,go);
  const r3=mk("div","row"),selOf=(k,opts)=>{const s=mk("select");opts.forEach(([x,t])=>s.append(new Option(t,x,x===SG(k),x===SG(k))));s.onchange=()=>{SET[k]=s.value;saveSet()};return s};
  const ck=(t,k)=>{const l=mk("label"),c=mk("input");c.type="checkbox";c.checked=!!SG(k);c.onchange=()=>{SET[k]=c.checked;saveSet()};l.append(c," "+t);return l};
@@ -182,7 +185,7 @@ function whiten(S,out){const n=S.length,P=new Float64Array(n+1);for(let i=0;i<n;
  for(let b=0;b<n;b++){const h=Math.max(5,Math.round(b*.22)),lo=Math.max(0,b-h),hi=Math.min(n,b+h+1),m=(P[hi]-P[lo])/(hi-lo);out[b]=Math.min(8,Math.max(0,S[b]/(m+1e-9)-1.1))}
  /* keep only real peaks: a local maximum that stands well above its surroundings */
  const t=Float32Array.from(out);for(let b=0;b<n;b++){let ok=t[b]>=GATE;for(let d=-2;d<=2&&ok;d++){const q=b+d;if(q>=0&&q<n&&t[q]>t[b])ok=false}out[b]=ok?t[b]:0}}
-const GATE=1.2;
+const GATE=.3;
 function band(S,sr,N,f){const lo=Math.max(1,Math.floor(f*.9715*N/sr)),hi=Math.min(S.length-2,Math.ceil(f*1.0293*N/sr));let m=0;for(let b=lo;b<=hi;b++)if(S[b]>m)m=S[b];return m}
 function sal(S,sr,N,m,tu){const f=mf(m,tu);let t=0;for(let h=1;h<=HW.length;h++){if(f*h*1.03>sr/2)break;t+=HW[h-1]*band(S,sr,N,f*h)}return t}
 function wipe(S,sr,N,m,tu){const f=mf(m,tu);for(let h=1;h<=HW.length;h++){const lo=Math.max(1,Math.floor(f*h*.9715*N/sr)),hi=Math.min(S.length-2,Math.ceil(f*h*1.0293*N/sr));for(let b=lo;b<=hi;b++)S[b]=0}}
@@ -274,16 +277,18 @@ async function transcribe(buf,start,secs,cb){
  /* how far off concert pitch the recording is: peaks of the whole clip vote on how far they sit from the nearest semitone */
  let tu=0;{let cs=0,sn=0;for(let q=2;q<WF.length;q++){const W=WF[q];for(let b=Math.round(150*NM/srd);b<Math.round(1500*NM/srd);b++)if(W[b]>0){const fr=b*srd/NM,mm=69+12*Math.log2(fr/440),dv=mm-Math.round(mm);cs+=W[b]*Math.cos(2*Math.PI*dv);sn+=W[b]*Math.sin(2*Math.PI*dv)}}
   if(cs*cs+sn*sn>0)tu=Math.max(-45,Math.min(45,Math.atan2(sn,cs)/(2*Math.PI)*100))}
- const steady=[],cand=[],novBest=[],bass=[],bassStr=[],Wd=new Float32Array(hm),MM=[52,92];
+ const steady=[],steadyBase=[],cand=[],novBest=[],bass=[],bassStr=[],Wd=new Float32Array(hm),MM=[52,92];
  /* a voice counts when its base note and an overtone are both new */
  const salN=(W,m)=>{const f=mf(m,tu);let t=0,got=0,base=0;for(let h=1;h<=HW.length;h++){const fh=f*h;if(fh>4500)break;const cb_=fh*NM/srd,hw=Math.max(1.2,fh*.02*NM/srd);let v=0;for(let b=Math.max(1,Math.floor(cb_-hw));b<=Math.min(hm-2,Math.ceil(cb_+hw));b++)if(W[b]>v)v=W[b];
    if(h===1)base=v;else if(v>0&&h<=3)got++;t+=HW[h-1]*v}
   return base>0&&(got>0||f*2>4500)?t:0};
+ const fundN=(W,m)=>{const f=mf(m,tu),cb_=f*NM/srd,hw=Math.max(1.2,f*.02*NM/srd);let v=0;
+  for(let b=Math.max(1,Math.floor(cb_-hw));b<=Math.min(hm-2,Math.ceil(cb_+hw));b++)if(W[b]>v)v=W[b];return v};
  const wipeN=(W,m)=>{const f=mf(m,tu);for(let h=1;h<=HW.length;h++){const fh=f*h,cb_=fh*NM/srd,hw=Math.max(1.2,fh*.02*NM/srd);for(let b=Math.max(1,Math.floor(cb_-hw));b<=Math.min(hm-2,Math.ceil(cb_+hw));b++)W[b]=0}};
  for(let i=0;i<n;i++){
   const Wc=WF[i+2],Wp=WF[i+1],Wpp=WF[i];
   for(let b=0;b<hm;b++){let q=0;for(let d=-1;d<=1;d++){const k=b+d;if(k>=0&&k<hm)q=Math.max(q,Wp[k],Wpp[k])}Wd[b]=Math.max(0,Wc[b]-q)}
-  const st=new Float32Array(MHI-MLO+1);for(let m=MM[0];m<=MM[1];m++)st[m-MLO]=salN(Wc,m);steady.push(st);
+  const st=new Float32Array(MHI-MLO+1),base=new Float32Array(MHI-MLO+1);for(let m=MM[0];m<=MM[1];m++){st[m-MLO]=salN(Wc,m);base[m-MLO]=fundN(Wc,m)}steady.push(st);steadyBase.push(base);
   const pk=[];let s1=0;for(let r=0;r<5;r++){let best=-1,bs=0;for(let m=MM[0];m<=MM[1];m++){if(pk.some(p=>p[0]===m))continue;const s=salN(Wd,m);if(s>bs){bs=s;best=m}}
    if(best<0||bs<=0)break;if(!r)s1=bs;if(bs<.3*s1)break;pk.push([best,bs]);wipeN(Wd,best)}
   cand.push(pk);novBest.push(s1);
@@ -306,12 +311,37 @@ async function transcribe(buf,start,secs,cb){
   for(let s=-48;s<=48;s+=12){const cnt=used.filter(m=>m+s>=48&&m+s<=83).length,d=Math.abs(med+s-65.5);if(cnt>bc||(cnt===bc&&d<bdd)){bc=cnt;bdd=d;shift=s}}}
  const fold=m=>{m+=shift;while(m<48)m+=12;while(m>83)m-=12;return m};
  let notes=midi.map(m=>m===null?null:fold(m));
+ let snapScale=null;
  if(SG("transSnap")&&notes.some(m=>m!==null)){const hist=new Array(12).fill(0);notes.forEach(m=>{if(m!==null)hist[m%12]++});
   let bk=0,bs=-1e9,bmin=false;for(let t=0;t<12;t++)for(const mn of[false,true]){const pr=mn?KEYMIN:KEYMAJ;let s=0;for(let i=0;i<12;i++)s+=hist[(i+t)%12]*pr[i];if(s>bs){bs=s;bk=t;bmin=mn}}
-  const sc=(bmin?[0,2,3,5,7,8,10]:[0,2,4,5,7,9,11]).map(i=>(i+bk)%12);
-  notes=notes.map(m=>{if(m===null||sc.includes(m%12))return m;for(const d of[1,-1,2,-2]){const c=m+d;if(c>=48&&c<=83&&sc.includes(c%12))return c}return m})}
- const tok=new Array(n);
- for(let i=0;i<n;i++){const m=notes[i];if(m===null){tok[i]=0;continue}tok[i]=(start_[i]||i===0||notes[i-1]!==m)?2+m-48:1}
+  snapScale=(bmin?[0,2,3,5,7,8,10]:[0,2,4,5,7,9,11]).map(i=>(i+bk)%12)}
+ const snap=m=>{m=fold(m);if(!snapScale||snapScale.includes(m%12))return m;for(const d of[1,-1,2,-2]){const c=m+d;if(c>=48&&c<=83&&snapScale.includes(c%12))return c}return m};
+ notes=notes.map(m=>m===null?null:snap(m));
+ const polyCand=steady.map((row,i)=>{const notes=[];let peak=0;for(let m=MM[0];m<=MM[1];m++){
+   const prev=Math.max(i?steady[i-1][m-MLO]:0,i>1?steady[i-2][m-MLO]:0),basePrev=Math.max(i?steadyBase[i-1][m-MLO]:0,i>1?steadyBase[i-2][m-MLO]:0);
+   const score=Math.max(0,row[m-MLO]-.7*prev),fund=Math.max(0,steadyBase[i][m-MLO]-.7*basePrev);
+   if(score>0&&fund>.12){notes.push([m,score,fund]);peak=Math.max(peak,score)}}
+  return notes.filter(([,score])=>score>=Math.max(.18*peak,.18)).sort((a,b)=>b[1]-a[1])});
+ const lanes=Array.from({length:MUSIC_VOICES},()=>new Array(n).fill(0)),previous=new Array(MUSIC_VOICES).fill(null),active=new Map();
+ for(let i=0;i<n;i++){
+  for(const[p,a]of active){if(i-a.start>=maxHold){active.delete(p);continue}
+   if(steady[i][p-MLO]<.3*a.base){if(++a.weak>=2)active.delete(p)}else a.weak=0}
+  const pk=polyCand[i],peak=pk.length?pk[0][1]:0;
+  if(peak>0)for(const[p,score,fund]of pk){
+   if(score<.18*peak||fund<.18||notes[i]!==null&&Math.abs(p-midi[i])<=1)continue;
+   active.set(p,{start:i,base:Math.max(1e-9,steady[i][p-MLO]),score,weak:0})
+  }
+  const used=new Set(notes[i]===null?[]:[notes[i]]),extras=[];
+  for(const a of Array.from(active,([m,a])=>({p:snap(m),score:a.score,start:a.start})).sort((a,b)=>b.score-a.score)){
+   if(used.has(a.p))continue;used.add(a.p);extras.push(a);if(extras.length>=MUSIC_VOICES-(notes[i]===null?0:1))break}
+  const mainCount=notes[i]===null?0:1,pitches=[...(mainCount?[notes[i]]:[]),...extras.map(x=>x.p)];
+  for(let v=0;v<MUSIC_VOICES;v++){
+   const p=pitches[v]??null;
+   const extra=extras[v-mainCount];
+   lanes[v][i]=p===null?0:(previous[v]===p&&!(v===0&&mainCount&&start_[i])&&!(extra&&extra.start===i)?1:2+p-48);
+   previous[v]=p
+  }
+ }
  /* bass */
  const doBass=SG("transBass")!==false,doDrums=SG("transDrums")!==false,bm=Math.max(1e-9,pctl(bassStr,.9));
  let bs_=bass.map((m,i)=>!doBass||m<0||bassStr[i]<.2*bm?0:1+m%12);
@@ -327,6 +357,7 @@ async function transcribe(buf,start,secs,cb){
  const th=b=>{const v=fl.map(f=>f[b]),m=v.reduce((p,q)=>p+q,0)/n;return m+Math.sqrt(v.reduce((p,q)=>p+(q-m)*(q-m),0)/n)};
  const Tt=[th(0),th(1),th(2)];
  cb&&cb(.97);
- const out=tok.map((mel,i)=>{const f=fl[i],d=!doDrums?0:f[1]>Tt[1]&&f[2]>Tt[2]?2:f[0]>Tt[0]?1:f[2]>Tt[2]?3:0;return mel+38*(bs_[i]+13*d)});
+ const out=lanes[0].map((_,i)=>{const f=fl[i],d=!doDrums?0:f[1]>Tt[1]&&f[2]>Tt[2]?2:f[0]>Tt[0]?1:f[2]>Tt[2]?3:0;
+  return packMusic(lanes.map(l=>l[i]),bs_[i],d,true)});
  out.stepTimes=Float64Array.from({length:n+1},(_,i)=>(tS(i)-g0)/stepSec);
  out.stepSec=stepSec;out.sub=sub;out.bpm=60/(stepSec*sub);out.t0=r0+g0;out.secs=tS(n)-g0; return out}

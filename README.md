@@ -5,7 +5,7 @@ It reads `app/manifest.json` from this repo on GitHub, downloads every piece lis
 
 - `app/shell.html` - the page frame
 - `app/style.css` - all the styling
-- `app/js/core.js` - engine, room list, router
+- `app/js/core.js` - engine, room list, router, and legacy/polyphonic music encodings
 - `app/js/settings.js` - the Settings page (60+ options, searchable, saved in the browser)
 - `app/js/random.js` - pure random generators (uniform length 1 to link max, every symbol random)
 - `app/js/home.js` - home, about, shelf
@@ -14,7 +14,7 @@ It reads `app/manifest.json` from this repo on GitHub, downloads every piece lis
 - `app/js/pictures.js` - Pictures
 - `app/js/sound.js` - Sound
 - `app/js/synth.js` - instruments, drum kits and the player (tempo, swing, humanize, reverb, crackle, looping)
-- `app/js/music.js` - the record, the record player page, the monkeys, and the mp3-to-notes listener
+- `app/js/music.js` - the record, the record player page, the monkeys, and the polyphonic mp3-to-notes listener
 - `app/js/search.js` - Search
 - `app/js/main.js` - starts the app
 - `data/words.txt` - word list for Random word and "only real words"

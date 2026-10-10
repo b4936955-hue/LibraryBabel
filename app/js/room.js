@@ -8,7 +8,8 @@ const ASK={
  binary:"Type some 0s and 1s. Or paste an address like @123.",
  dice:"Type rolls like 4 1 6 6 2. Or paste an address like @123.",
  emoji:"Paste some smiley faces. Or paste an address like @123.",
- music:"Type notes like C4 E4 G4 - - C5. Or paste an address like @123."};
+ music:"Type notes like C4 E4 G4 - - C5. Or paste an address like @123.",
+ musicpoly:"Type notes like C4 E4 G4 - - C5. Or paste a polyphonic music address like @musicpoly:123."};
 async function room(m,arg){
  const R=ROOMS[m],tok=viewTok;let seed,toks,err="";
  try{seed=typeof arg==="bigint"?arg:BigInt(arg)}catch(e){err="That address doesn't look right."}
@@ -36,7 +37,7 @@ async function room(m,arg){
  if(PER[m]){const sh=SHOW[m]||String,per=PER[m],parts=[];for(let i=0;i<toks.length;i++)parts.push(sh(toks[i])+((i+1)%per?"":"\n"));text=parts.join("");winText(sg,text,"mono")}
  if(m==="binary")png=bitmapView(sg,toks);
  if(m==="colors"){text=toks.map(t=>"#"+t.toString(16).padStart(6,"0")).join(" ");winChunks(sg,toks.length,(a,b,g)=>{for(let i=a;i<b;i++){const t=toks[i],x="#"+t.toString(16).padStart(6,"0"),c=mk("i",hl&&i>=hl.a&&i<hl.b?"hl":"");c.style.background=x;c.title=x+" (click to copy)";c.onclick=()=>copy(x,st);g.append(c)}},"sw","swatches")}
- if(m==="music")musicUI(sg,toks,st);
+ if(m==="music"||m==="musicpoly")musicUI(sg,toks,st,m==="musicpoly");
  const a=mk("div","acts"),bR=mk("button","btn pri","Random page"),bP=mk("button","btn","Previous page"),bN=mk("button","btn","Next page"),b2=mk("button","btn","Copy link"),b3=mk("button","btn","Copy address"),b4=mk("button","btn");
  bR.onclick=()=>goRandom(m);
  bP.onclick=()=>openSeed(m,seed>1n?seed-1n:seed);bN.onclick=()=>openSeed(m,seed+1n);

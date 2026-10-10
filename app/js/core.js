@@ -13,8 +13,20 @@ const ROOMS={
  emoji:{name:"Emoji",K:64,len:0,max:1000000,tag:"Rows of little smiley faces.",hue:"#a39255"},
  pictures:{name:"Pictures",K:16777216,len:0,tag:"Real pictures, up to 2048 by 2048. Upload one and I'll give you its address.",hue:"#7a6a96"},
  sound:{name:"Sound",K:256,len:0,tag:"Real audio, up to a whole song. Upload an mp3 and I'll give you its address.",hue:"#a0704a"},
- music:{name:"Music",K:1976,len:0,max:20000,tag:"Records with a melody, a bass line and drums, from a single note up to about forty minutes.",hue:"#6a8f86"}
+ music:{name:"Music",K:1976,len:0,max:20000,tag:"Records with a melody, a bass line and drums, from a single note up to about forty minutes.",hue:"#6a8f86"},
+ musicpoly:{name:"Music",K:38**5*52,len:0,max:20000,tag:"Polyphonic music records with up to five simultaneous note parts.",hue:"#6a8f86",hidden:true}
 };
+const MUSIC_VOICES=5;
+function musicParts(t,poly=false){
+ if(!poly)return{voices:[t%38],bass:Math.floor(t/38)%13,drum:Math.floor(t/494)};
+ const voices=[];for(let i=0;i<MUSIC_VOICES;i++){voices.push(t%38);t=Math.floor(t/38)}
+ return{voices,bass:t%13,drum:Math.floor(t/13)}
+}
+function packMusic(voices,bass=0,drum=0,poly=false){
+ if(!poly)return(voices[0]||0)+38*(bass+13*drum);
+ let t=0,f=1;for(let i=0;i<MUSIC_VOICES;i++){t+=(voices[i]||0)*f;f*=38}
+ return t+f*(bass+13*drum)
+}
 /* Pages up to LINK_MAX base-36 digits live in the link. Bigger ones become an address you copy and paste. */
 const PKC=new Map();
 function PK(k,e){const key=k+":"+e;let x=PKC.get(key);if(x===undefined){x=k**BigInt(e);PKC.set(key,x)}return x}
@@ -61,7 +73,8 @@ function resolve(m,raw){
  if(SYM[m]){t=[...val.replace(/\s/g,"")].map(SYM[m]);if(!t.length||t.some(x=>!(x>=0&&x<R.K)))throw Error("Some of that doesn't fit in this room.")}
  if(m==="numbers"){t=[...val.replace(/\D/g,"")].map(Number);if(!t.length)throw Error("Type some digits, or paste an address like @123.")}
  if(m==="colors"){const f=val.match(/#?\b[0-9a-f]{6}\b|#?\b[0-9a-f]{3}\b/gi);if(!f)throw Error("Type colors like #c79a4a #fff, or paste an address like @123.");t=f.map(x=>{x=x.replace("#","");if(x.length===3)x=[...x].map(c=>c+c).join("");return parseInt(x,16)})}
- if(m==="music")t=parseNotes(val);
+ if(m==="music"||m==="musicpoly")t=parseNotes(val);
+ if(m==="musicpoly")t=t.map(note=>packMusic([note],0,0,true));
  if(!R.len){if(t.length>R.max)throw Error("Pages hold up to "+R.max.toLocaleString()+" here.");return{seed:toSeed(t,R.K,false)}}
  if(t.length>R.len)throw Error("That's more than one page holds ("+R.len+").");
  return{seed:toSeed(pad(t,R.K,R.len),R.K,true),hl:{a:0,b:t.length}}}
@@ -69,7 +82,7 @@ function resolve(m,raw){
 /* ---------- little helpers ---------- */
 const $=(s,e=document)=>e.querySelector(s), v=$("#v");
 function mk(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
-let hl=null,orig=null,keep=false,tuneSel=null,bmW=0;
+let hl=null,orig=null,keep=false,tuneSel=null,bmW=0,MUSIC_POLY=false;
 let BIG=null,viewTok=0;
 function nav(q,replace){BIG=null;try{history[replace?"replaceState":"pushState"]({},"",q)}catch(e){}route()}
 /* the one way to open a page by its seed */
@@ -83,7 +96,7 @@ const saveBlob=(blob,name)=>{const a=document.createElement("a");a.href=URL.crea
 const getCat=()=>{try{return JSON.parse(localStorage.getItem("babelCatalog"))||[]}catch(e){return[]}};
 const setCat=a=>{try{localStorage.setItem("babelCatalog",JSON.stringify(a))}catch(e){}};
 function copy(t,n){try{navigator.clipboard.writeText(t).then(()=>n.textContent="Copied.",()=>n.textContent="That didn't copy. Try Save address as text instead.")}catch(e){n.textContent="That didn't copy. Try Save address as text instead."}}
-const NAV=[["home","Home"],...Object.keys(ROOMS).map(k=>[k,ROOMS[k].name]),["search","Search"],["catalog","My shelf"],["settings","Settings"],["about","About"]];
+const NAV=[["home","Home"],...Object.keys(ROOMS).filter(k=>!ROOMS[k].hidden).map(k=>[k,ROOMS[k].name]),["search","Search"],["catalog","My shelf"],["settings","Settings"],["about","About"]];
 $("#nav").append(...NAV.map(([k,t])=>{const a=mk("a",null,t);a.dataset.k=k;a.tabIndex=0;const go=()=>nav(k==="home"?"?":ROOMS[k]?"?m="+k:"?v="+k);a.onclick=go;a.onkeydown=e=>{if(e.key==="Enter")go()};return a}));
 
 /* ---------- router ---------- */

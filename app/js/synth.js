@@ -47,15 +47,16 @@ function playToks(toks,onPos,end,spd){
  const t0=ctx.currentTime+.08,out=ctx.createGain(),comp=ctx.createDynamicsCompressor(),cv=ctx.createConvolver(),wet=ctx.createGain();
  const V=k=>(+SG(k)||0)/100,hum=+SG("humanize")||0,swing=(+SG("swing")||0)/100,tr=+SG("transpose")||0,bassI=SG("bassInst")||"organ";
  out.gain.value=.3*SG("volume")/60;cv.buffer=verb;wet.gain.value=V("reverb")*.6;out.connect(comp);out.connect(cv);cv.connect(wet);wet.connect(comp);comp.connect(ctx.destination);
- const BS=(!tuneSel&&isOrig(toks)&&orig.sub)||4,mel=toks.map(t=>t%38),bas=toks.map(t=>Math.floor(t/38)%13),drm=toks.map(t=>Math.floor(t/494));let last=-1;
+ const parts=toks.map(t=>musicParts(t,MUSIC_POLY&&!tuneSel)),mel=Array.from({length:MUSIC_POLY&&!tuneSel?MUSIC_VOICES:1},(_,v)=>parts.map(p=>p.voices[v]||0)),bas=parts.map(p=>p.bass),drm=parts.map(p=>p.drum);
+ const BS=(!tuneSel&&isOrig(toks)&&orig.sub)||4;let last=-1;
  const at=i=>timeAt(i)+(i%2?swing*(unitAt(i+1)-unitAt(i))*SP*.5:0)+jit(hum/1000),vel=()=>1-(hum?Math.random()*hum/40*.35:0);
  const step=i=>{const st=Math.max(t0,at(i));
-  if(mel[i]>=2){let l=1;while(mel[i+l]===1)l++;last=mel[i]-2+48;voice(last+tr,st,Math.max(st+.05,timeAt(i+l)),INST,out,.9*V("melodyVol")*vel())}
+  for(const lane of mel)if(lane[i]>=2){let l=1;while(lane[i+l]===1)l++;const note=lane[i]-2+48;if(lane===mel[0])last=note;voice(note+tr,st,Math.max(st+.05,timeAt(i+l)),INST,out,.9*V("melodyVol")*vel())}
   if(BAND){
    if(bas[i]&&(i===0||bas[i-1]!==bas[i]||i%BS===0)){let l=1;while(i+l<n&&bas[i+l]===bas[i]&&(i+l)%BS)l++;voice(35+bas[i]+tr,st,Math.max(st+.05,timeAt(i+l)),bassI,out,.6*V("bassVol")*vel())}
    const dv=V("drumVol")*vel();if(drm[i]===1)drum("k",st,out,dv);else if(drm[i]===2)drum("s",st,out,dv);else if(drm[i]===3)drum("h",st,out,dv)}
   if(CHORDS&&i%(4*BS)===0&&last>=0){const BL=4*BS,cnt=new Array(13).fill(0);for(let j=i;j<i+BL&&j<n;j++)cnt[bas[j]]++;let bb=0;for(let q=1;q<=12;q++)if(cnt[q]>cnt[bb]||(bb===0&&cnt[q]>0))bb=q;
-   const r=bb?48+(bb-1):48+last%12;let mi=0,ma=0;for(let j=i;j<i+BL&&j<n;j++)if(mel[j]>=2){const pc=(mel[j]-2+48)%12;if(pc===(r+3)%12)mi=1;if(pc===(r+4)%12)ma=1}[0,mi&&!ma?3:4,7].forEach(x=>voice(r+x+tr,st,Math.max(st+.05,timeAt(i+BL)),"strings",out,.16*V("chordVol"))) }};
+   const r=bb?48+(bb-1):48+last%12;let mi=0,ma=0;for(let j=i;j<i+BL&&j<n;j++)if(mel[0][j]>=2){const pc=(mel[0][j]-2+48)%12;if(pc===(r+3)%12)mi=1;if(pc===(r+4)%12)ma=1}[0,mi&&!ma?3:4,7].forEach(x=>voice(r+x+tr,st,Math.max(st+.05,timeAt(i+BL)),"strings",out,.16*V("chordVol"))) }};
  /* only the next few seconds are built at a time, so a long or busy record never floods the audio engine */
  let nx=0;const pump=()=>{pumpT=0;if(!ctx||nodes!==os)return;const now=ctx.currentTime;for(let k=os.length-1;k>=0;k--)if(os[k]._e<now)os.splice(k,1);
   while(nx<n&&timeAt(nx)<now+4)step(nx++);if(nx<n)pumpT=setTimeout(pump,250)};
