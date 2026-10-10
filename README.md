@@ -14,7 +14,7 @@ It reads `app/manifest.json` from this repo on GitHub, downloads every piece lis
 - `app/js/pictures.js` - Pictures
 - `app/js/sound.js` - Sound
 - `app/js/synth.js` - instruments, drum kits and the player (tempo, swing, humanize, reverb, crackle, looping)
-- `app/js/music.js` - the record, the record player page, the monkeys, and the polyphonic mp3-to-notes listener
+- `app/js/music.js` - the record, the record player page, the monkeys, and melody-first mp3-to-notes transcription
 - `app/js/search.js` - Search
 - `app/js/main.js` - starts the app
 - `data/words.txt` - word list for Random word and "only real words"
