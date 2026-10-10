@@ -181,11 +181,11 @@ const mf=(m,tu)=>440*Math.pow(2,(m-69)/12+(tu||0)/1200);
 const HW=[1,.85,.7,.55,.42,.3];
 const MLO=40,MHI=100;
 /* peaks stand out: divide by the local average over about a quarter of the frequency, keep what rises above it */
-function whiten(S,out){const n=S.length,P=new Float64Array(n+1);for(let i=0;i<n;i++)P[i+1]=P[i]+S[i];
+function whiten(S,out,gate=GATE){const n=S.length,P=new Float64Array(n+1);for(let i=0;i<n;i++)P[i+1]=P[i]+S[i];
  for(let b=0;b<n;b++){const h=Math.max(5,Math.round(b*.22)),lo=Math.max(0,b-h),hi=Math.min(n,b+h+1),m=(P[hi]-P[lo])/(hi-lo);out[b]=Math.min(8,Math.max(0,S[b]/(m+1e-9)-1.1))}
  /* keep only real peaks: a local maximum that stands well above its surroundings */
- const t=Float32Array.from(out);for(let b=0;b<n;b++){let ok=t[b]>=GATE;for(let d=-2;d<=2&&ok;d++){const q=b+d;if(q>=0&&q<n&&t[q]>t[b])ok=false}out[b]=ok?t[b]:0}}
-const GATE=.3;
+ const t=Float32Array.from(out);for(let b=0;b<n;b++){let ok=t[b]>=gate;for(let d=-2;d<=2&&ok;d++){const q=b+d;if(q>=0&&q<n&&t[q]>t[b])ok=false}out[b]=ok?t[b]:0}}
+const GATE=.6;
 function band(S,sr,N,f){const lo=Math.max(1,Math.floor(f*.9715*N/sr)),hi=Math.min(S.length-2,Math.ceil(f*1.0293*N/sr));let m=0;for(let b=lo;b<=hi;b++)if(S[b]>m)m=S[b];return m}
 function sal(S,sr,N,m,tu){const f=mf(m,tu);let t=0;for(let h=1;h<=HW.length;h++){if(f*h*1.03>sr/2)break;t+=HW[h-1]*band(S,sr,N,f*h)}return t}
 function wipe(S,sr,N,m,tu){const f=mf(m,tu);for(let h=1;h<=HW.length;h++){const lo=Math.max(1,Math.floor(f*h*.9715*N/sr)),hi=Math.min(S.length-2,Math.ceil(f*h*1.0293*N/sr));for(let b=lo;b<=hi;b++)S[b]=0}}
@@ -269,15 +269,15 @@ async function transcribe(buf,start,secs,cb){
  const stepSec=(tS(n)-g0)/n;
  /* the frame stream: one spectrum per step, taken over that step */
  const NM=stepSec>=.13?4096:2048,NB=8192,hm=NM/2,SM=new Float32Array(hm),SB=new Float32Array(NB/2),sx=t=>Math.round(t*srd);
- const WF=[],bassS=[];
+ const WF=[],WFP=[],bassS=[];
  for(let i=-2;i<n;i++){
   if(i%4===3){cb&&cb(.15+.35*i/n);await new Promise(z=>setTimeout(z))}
-  const Wc=new Float32Array(hm);spec(xd,sx(tS(i)+.5*stepDur(i)),NM,SM);whiten(SM,Wc);WF.push(Wc);
+  const Wc=new Float32Array(hm),Wp=new Float32Array(hm);spec(xd,sx(tS(i)+.5*stepDur(i)),NM,SM);whiten(SM,Wc);whiten(SM,Wp,.3);WF.push(Wc);WFP.push(Wp);
   if(i>=0){spec(xd,sx(tS(i)+.5*stepDur(i)),NB,SB);const Wb=new Float32Array(NB/2);whiten(SB,Wb);bassS.push(Wb)}}
  /* how far off concert pitch the recording is: peaks of the whole clip vote on how far they sit from the nearest semitone */
  let tu=0;{let cs=0,sn=0;for(let q=2;q<WF.length;q++){const W=WF[q];for(let b=Math.round(150*NM/srd);b<Math.round(1500*NM/srd);b++)if(W[b]>0){const fr=b*srd/NM,mm=69+12*Math.log2(fr/440),dv=mm-Math.round(mm);cs+=W[b]*Math.cos(2*Math.PI*dv);sn+=W[b]*Math.sin(2*Math.PI*dv)}}
   if(cs*cs+sn*sn>0)tu=Math.max(-45,Math.min(45,Math.atan2(sn,cs)/(2*Math.PI)*100))}
- const steady=[],steadyBase=[],cand=[],novBest=[],bass=[],bassStr=[],Wd=new Float32Array(hm),MM=[52,92];
+ const steady=[],steadyBase=[],steadyPoly=[],steadyBasePoly=[],cand=[],novBest=[],bass=[],bassStr=[],Wd=new Float32Array(hm),MM=[52,92];
  /* a voice counts when its base note and an overtone are both new */
  const salN=(W,m)=>{const f=mf(m,tu);let t=0,got=0,base=0;for(let h=1;h<=HW.length;h++){const fh=f*h;if(fh>4500)break;const cb_=fh*NM/srd,hw=Math.max(1.2,fh*.02*NM/srd);let v=0;for(let b=Math.max(1,Math.floor(cb_-hw));b<=Math.min(hm-2,Math.ceil(cb_+hw));b++)if(W[b]>v)v=W[b];
    if(h===1)base=v;else if(v>0&&h<=3)got++;t+=HW[h-1]*v}
@@ -288,7 +288,9 @@ async function transcribe(buf,start,secs,cb){
  for(let i=0;i<n;i++){
   const Wc=WF[i+2],Wp=WF[i+1],Wpp=WF[i];
   for(let b=0;b<hm;b++){let q=0;for(let d=-1;d<=1;d++){const k=b+d;if(k>=0&&k<hm)q=Math.max(q,Wp[k],Wpp[k])}Wd[b]=Math.max(0,Wc[b]-q)}
-  const st=new Float32Array(MHI-MLO+1),base=new Float32Array(MHI-MLO+1);for(let m=MM[0];m<=MM[1];m++){st[m-MLO]=salN(Wc,m);base[m-MLO]=fundN(Wc,m)}steady.push(st);steadyBase.push(base);
+  const Wpoly=WFP[i+2],st=new Float32Array(MHI-MLO+1),base=new Float32Array(MHI-MLO+1),stPoly=new Float32Array(MHI-MLO+1),basePoly=new Float32Array(MHI-MLO+1);
+  for(let m=MM[0];m<=MM[1];m++){st[m-MLO]=salN(Wc,m);base[m-MLO]=fundN(Wc,m);stPoly[m-MLO]=salN(Wpoly,m);basePoly[m-MLO]=fundN(Wpoly,m)}
+  steady.push(st);steadyBase.push(base);steadyPoly.push(stPoly);steadyBasePoly.push(basePoly);
   const pk=[];let s1=0;for(let r=0;r<5;r++){let best=-1,bs=0;for(let m=MM[0];m<=MM[1];m++){if(pk.some(p=>p[0]===m))continue;const s=salN(Wd,m);if(s>bs){bs=s;best=m}}
    if(best<0||bs<=0)break;if(!r)s1=bs;if(bs<.3*s1)break;pk.push([best,bs]);wipeN(Wd,best)}
   cand.push(pk);novBest.push(s1);
@@ -317,18 +319,18 @@ async function transcribe(buf,start,secs,cb){
   snapScale=(bmin?[0,2,3,5,7,8,10]:[0,2,4,5,7,9,11]).map(i=>(i+bk)%12)}
  const snap=m=>{m=fold(m);if(!snapScale||snapScale.includes(m%12))return m;for(const d of[1,-1,2,-2]){const c=m+d;if(c>=48&&c<=83&&snapScale.includes(c%12))return c}return m};
  notes=notes.map(m=>m===null?null:snap(m));
- const polyCand=steady.map((row,i)=>{const notes=[];let peak=0;for(let m=MM[0];m<=MM[1];m++){
-   const prev=Math.max(i?steady[i-1][m-MLO]:0,i>1?steady[i-2][m-MLO]:0),basePrev=Math.max(i?steadyBase[i-1][m-MLO]:0,i>1?steadyBase[i-2][m-MLO]:0);
-   const score=Math.max(0,row[m-MLO]-.7*prev),fund=Math.max(0,steadyBase[i][m-MLO]-.7*basePrev);
+ const polyCand=steadyPoly.map((row,i)=>{const notes=[];let peak=0;for(let m=MM[0];m<=MM[1];m++){
+   const prev=Math.max(i?steadyPoly[i-1][m-MLO]:0,i>1?steadyPoly[i-2][m-MLO]:0),basePrev=Math.max(i?steadyBasePoly[i-1][m-MLO]:0,i>1?steadyBasePoly[i-2][m-MLO]:0);
+   const score=Math.max(0,row[m-MLO]-.7*prev),fund=Math.max(0,steadyBasePoly[i][m-MLO]-.7*basePrev);
    if(score>0&&fund>.12){notes.push([m,score,fund]);peak=Math.max(peak,score)}}
-  return notes.filter(([,score])=>score>=Math.max(.18*peak,.18)).sort((a,b)=>b[1]-a[1])});
+  return notes.filter(([,score])=>score>=Math.max(.35*peak,.25)).sort((a,b)=>b[1]-a[1])});
  const lanes=Array.from({length:MUSIC_VOICES},()=>new Array(n).fill(0)),previous=new Array(MUSIC_VOICES).fill(null),active=new Map();
  for(let i=0;i<n;i++){
   for(const[p,a]of active){if(i-a.start>=maxHold){active.delete(p);continue}
    if(steady[i][p-MLO]<.3*a.base){if(++a.weak>=2)active.delete(p)}else a.weak=0}
   const pk=polyCand[i],peak=pk.length?pk[0][1]:0;
-  if(peak>0)for(const[p,score,fund]of pk){
-   if(score<.18*peak||fund<.18||notes[i]!==null&&Math.abs(p-midi[i])<=1)continue;
+  if(pm[i]!==null&&peak>0)for(const[p,score,fund]of pk){
+   if(score<.35*peak||fund<.25||notes[i]!==null&&Math.abs(p-midi[i])<=1)continue;
    active.set(p,{start:i,base:Math.max(1e-9,steady[i][p-MLO]),score,weak:0})
   }
   const used=new Set(notes[i]===null?[]:[notes[i]]),extras=[];
